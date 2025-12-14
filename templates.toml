@@ -1,0 +1,9 @@
+[templates.ikea]
+name = "IKEA Česká republika, s.r.o."
+address = "Prodejna ASGARD,   Roseč 1,   378 46 Roseč"
+logo = "ikea.png"
+
+[templates.free_coffee]
+name = "Free Coffee"
+address = "Coffee Bar, 42 Brew Lane"
+logo = "free_coffee.png"

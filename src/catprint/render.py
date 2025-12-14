@@ -1,21 +1,73 @@
 import importlib.resources
 import itertools
+from catprint.compat import batched, LANCZOS, FLIP_LEFT_RIGHT, ROTATE_270
 import PIL
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
-from catprint.printer import PRINTER_WIDTH
+import PIL.ImageEnhance
+try:
+    from catprint.printer import PRINTER_WIDTH
+except Exception:
+    # allow importing render even when optional deps (bleak) for printer are not installed
+    PRINTER_WIDTH = 384
 import importlib
 
 
-def image(image: PIL.Image.Image) -> PIL.Image.Image:
-    if image.mode != "1":
-        image = image.convert("1")
+def image_page(
+    image: PIL.Image.Image, *, dither=True, contrast=1.2, sharpen=True, threshold=212
+) -> PIL.Image.Image:
+    """
+    Convert image to 1-bit for thermal printing with quality enhancements.
+    Args:
+        image: Input PIL Image
+        dither: Use Floyd-Steinberg dithering (better for photos/complex images)
+        contrast: Contrast adjustment (1.0 = no change, >1.0 = more contrast)
+        sharpen: Apply sharpening filter
+        threshold: Threshold value for 1-bit conversion (0-255, default 212)
+    """
+    # Resize first if needed
     if image.width > PRINTER_WIDTH:
-        image = image.resize(
-            (PRINTER_WIDTH, int(image.height * PRINTER_WIDTH / image.width))
-        )
+        new_height = int(image.height * PRINTER_WIDTH / image.width)
+        image = image.resize((PRINTER_WIDTH, new_height), LANCZOS)
+    # Convert to grayscale first
+    if image.mode != "L":
+        image = image.convert("L")
+    # Enhance contrast for better text readability
+    if contrast != 1.0:
+        enhancer = PIL.ImageEnhance.Contrast(image)
+        image = enhancer.enhance(contrast)
+    # Sharpen for better text clarity
+    if sharpen:
+        enhancer = PIL.ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(1.5)
+    # Convert to 1-bit with optional dithering
+    if dither:
+        # Floyd-Steinberg dithering (better for photos and complex images)
+        from catprint.compat import DITHER_FLOYD
+
+        image = image.convert("1", dither=DITHER_FLOYD if DITHER_FLOYD is not None else None)
+    else:
+        # Simple threshold (better for text and line art)
+        image = image.point(lambda x: 0 if x < threshold else 255, mode="1")
     return image
+
+
+def pdf_page(image: PIL.Image.Image, *, contrast=1.5, threshold=212) -> PIL.Image.Image:
+    """
+    Specialized rendering for PDF pages - optimized for text clarity.
+    Uses higher contrast and no dithering for crisp text.
+    """
+    return image_page(
+        image, dither=False, contrast=contrast, sharpen=True, threshold=threshold
+    )
+
+
+def photo(image: PIL.Image.Image) -> PIL.Image.Image:
+    """
+    Specialized rendering for photos - uses dithering for better gradients.
+    """
+    return image_page(image, dither=True, contrast=1.1, sharpen=False)
 
 
 def text(text: str, *, font_size: int = 18, line_length: int = 44) -> PIL.Image.Image:
@@ -32,7 +84,7 @@ def text(text: str, *, font_size: int = 18, line_length: int = 44) -> PIL.Image.
     lines = [
         "".join(subline)
         for line in text.splitlines()
-        for subline in itertools.batched(line, line_length)
+        for subline in batched(line, line_length)
     ]
     img = PIL.Image.new("1", (PRINTER_WIDTH, len(lines) * height), color="white")
     draw = PIL.ImageDraw.Draw(img)
@@ -43,7 +95,11 @@ def text(text: str, *, font_size: int = 18, line_length: int = 44) -> PIL.Image.
 
 def banner(text: str) -> PIL.Image.Image:
     font = PIL.ImageFont.truetype(
-        str(importlib.resources.files("catprint").joinpath("fonts/NotoSans_ExtraCondensed-Black.ttf")),
+        str(
+            importlib.resources.files("catprint").joinpath(
+                "fonts/NotoSans_ExtraCondensed-Black.ttf"
+            )
+        ),
         PRINTER_WIDTH,
     )
     left, top, right, bottom = font.getbbox(text)
@@ -60,12 +116,11 @@ def banner(text: str) -> PIL.Image.Image:
         fill="black",
         font=font,
     )
-    return img.transpose(PIL.Image.Transpose.ROTATE_270)
+    # use compatibility rotation constant
+    return img.transpose(ROTATE_270 if ROTATE_270 is not None else PIL.Image.ROTATE_270)
 
 
-def text_banner(
-    text: str, *, font_size: int = 18
-) -> PIL.Image.Image:
+def text_banner(text: str, *, font_size: int = 18) -> PIL.Image.Image:
     font = PIL.ImageFont.truetype(
         str(
             importlib.resources.files("catprint").joinpath(

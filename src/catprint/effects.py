@@ -2,25 +2,17 @@ import catprint
 import PIL.Image
 import textwrap
 import random
+from catprint.templates import get_template
 
 def ikea_receipt_banner(text: str) -> PIL.Image.Image:
     def r(n):
         return ''.join(str(random.randint(0, 9)) for _ in range(n))
+    tpl = get_template("ikea")
 
     return catprint.render.stack(
-        PIL.Image.open("img/ikea.png"),
+        PIL.Image.open(tpl.logo_path()),
         catprint.render.blank(20),
-        catprint.render.text(
-            textwrap.dedent(
-                f"""\
-                IKEA Česká republika, s.r.o.
-                Skandinávská 131/1,  155 00  Praha 5
-                IČO  27081052,       DIČ  CZ27081052
-                ****************************************
-                IKEA Family          {r(19)}
-                """
-            )
-        ),
+        catprint.render.text(tpl.header()),
         catprint.render.banner(text),
         catprint.render.text(
             textwrap.dedent(

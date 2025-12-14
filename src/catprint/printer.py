@@ -12,6 +12,7 @@ from bleak import BleakClient, BleakScanner
 import crc8
 
 import PIL.Image
+from catprint.compat import batched, FLIP_LEFT_RIGHT
 
 PRINTER_WIDTH = 384
 
@@ -53,7 +54,44 @@ class Command(enum.Enum):
         )
 
 
-async def print(img: PIL.Image.Image) -> None:
+async def select_printer() -> typing.Any:
+    """Scan for available printers and let the user choose one."""
+    print("Scanning for printers...")
+    devices = await BleakScanner.discover()
+    printers = [d for d in devices if d.name == "MX06"]
+
+    if not printers:
+        print("No printers found. Make sure the printer is powered on and in range.")
+        sys.exit(1)
+
+    if len(printers) == 1:
+        print(f"Found 1 printer: {printers[0].name} ({printers[0].address})")
+        return printers[0]
+
+    # Multiple printers found - let user choose
+    print(f"\nFound {len(printers)} printers:")
+    for i, printer in enumerate(printers, 1):
+        print(f"{i}. {printer.name} - {printer.address}")
+
+    while True:
+        try:
+            choice = input("\nSelect printer number (or 'q' to quit): ").strip()
+            if choice.lower() == "q":
+                sys.exit(0)
+
+            idx = int(choice) - 1
+            if 0 <= idx < len(printers):
+                return printers[idx]
+            else:
+                print(f"Please enter a number between 1 and {len(printers)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except (KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            sys.exit(0)
+
+
+async def print(img: PIL.Image.Image, device=None) -> None:
     assert img.width == PRINTER_WIDTH, f"Image width must be {PRINTER_WIDTH} pixels"
 
     data = b"".join(
@@ -65,11 +103,11 @@ async def print(img: PIL.Image.Image) -> None:
             Command.OTHER_FEED_PAPER.format(Command.PrintSpeed.IMAGE.value),
             *(
                 Command.DRAW_BITMAP.format(bytes(reversed(chunk)))
-                for chunk in itertools.batched(
+                for chunk in batched(
                     img.convert("RGB")
                     .convert("1")
                     .point(lambda p: 255 - p)
-                    .transpose(PIL.Image.Transpose.FLIP_LEFT_RIGHT)
+                    .transpose(FLIP_LEFT_RIGHT if FLIP_LEFT_RIGHT is not None else PIL.Image.FLIP_LEFT_RIGHT)
                     .tobytes(),
                     PRINTER_WIDTH // 8,
                 )
@@ -79,16 +117,22 @@ async def print(img: PIL.Image.Image) -> None:
         )
     )
 
-    try:
-        device = next((d for d in (await BleakScanner.discover()) if d.name == "MX06"))
-    except StopIteration:
-        __builtins__.print("Printer not found. Make sure it is powered on and in range.")
-        sys.exit(1)
+    if device is None:
+        device = await select_printer()
+    # try:
+    #     # device = next((d for d in (await BleakScanner.discover()) if d.name == "MX06"))
+    #     device = await select_printer()
+    print(f"\nConnecting to {device.name} ({device.address})...")
+    # except StopIteration:
+    #     __builtins__.print("Printer not found. Make sure it is powered on and in range.")
+    #     sys.exit(1)
 
     async with BleakClient(device) as client:
+        print("Connected! Printing...")
         for chunk in itertools.batched(data, n=64):
             # service UUID: 0000ae30-0000-1000-8000-00805f9b34fb
             await client.write_gatt_char(
                 "0000AE01-0000-1000-8000-00805F9B34FB", bytearray(chunk)
             )
             await asyncio.sleep(0.025)
+        print("Print job sent successfully!")
