@@ -32,8 +32,9 @@ class ReceiptBlock(BaseModel):
 class PrintReceiptRequest(BaseModel):
     printer: str = Field(..., description="Printer MAC address")
     blocks: list[ReceiptBlock]
-    include_template: bool = False
-    template: Optional[str] = Field(None, description="Template key to use")
+    include_logo: bool = Field(True, description="Include template logo")
+    include_header_footer: bool = Field(True, description="Include template header and footer")
+    template: Optional[str] = Field(None, description="Template key to use (defaults to first receipt template)")
     mock: bool = False
 
 
@@ -89,7 +90,9 @@ async def print_receipt(req: PrintReceiptRequest):
             {"type": "text", "data": "Hello World"},
             {"type": "banner", "data": "SALE"}
         ],
-        "include_template": true,
+        "template": "ikea",
+        "include_logo": true,
+        "include_header_footer": true,
         "mock": false
     }
     """
@@ -103,9 +106,23 @@ async def print_receipt(req: PrintReceiptRequest):
     try:
         # Render blocks using shared helper (supports pdf, images, text, banners)
         from catprint import receipt
+        from catprint.templates import list_templates
 
-        tpl = get_template(req.template or "ikea") if req.include_template else None
-        rendered_blocks = receipt.render_blocks(req.blocks, include_template=req.include_template, template=tpl)
+        # Get template if logo or header/footer is requested
+        tpl = None
+        if req.include_logo or req.include_header_footer:
+            # Use provided template or default to first receipt-supporting template
+            all_templates = list_templates()
+            receipt_options = [k for k in all_templates if get_template(k).supports_receipt]
+            template_key = req.template or (receipt_options[0] if receipt_options else "ikea")
+            tpl = get_template(template_key)
+        
+        rendered_blocks = receipt.render_blocks(
+            req.blocks, 
+            include_logo=req.include_logo,
+            include_header_footer=req.include_header_footer, 
+            template=tpl
+        )
 
         print(f"DEBUG: Rendered {len(rendered_blocks)} blocks")
 

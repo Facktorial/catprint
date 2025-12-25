@@ -7,6 +7,7 @@ from typing import Iterable, List, Optional
 import PIL.Image
 
 from . import render
+from catprint.templates import get_template
 
 
 def _decode_image_from_base64(s: str) -> PIL.Image.Image:
@@ -21,18 +22,38 @@ def _convert_pdf_bytes(pdf_bytes: bytes, dpi: int = 150) -> List[PIL.Image.Image
     return pdf2image.convert_from_bytes(pdf_bytes, dpi=dpi)
 
 
-def render_blocks(blocks: Iterable, *, include_template: bool = False, template=None) -> List[PIL.Image.Image]:
+def render_blocks(
+    blocks: Iterable,
+    *,
+    include_template: bool | None = None,
+    include_logo: bool | None = None,
+    include_header_footer: bool | None = None,
+    template=None,
+) -> List[PIL.Image.Image]:
     """Render a list of blocks into printer-ready pages.
 
     Blocks may be either dict-like (as sent to the HTTP API) or objects with attributes
     (as used by the Streamlit app). Supported block types: text, banner, image, pdf.
+
+    Compatibility: the legacy flag `include_template` controls both logo and header/footer
+    when provided. New flags `include_logo` and `include_header_footer` can be used to
+    control them independently.
     """
     pages: List[PIL.Image.Image] = []
 
     tpl = template
 
-    if include_template and tpl is not None:
+    # Resolve inclusion flags
+    if include_template is not None:
+        incl_logo = bool(include_template)
+        incl_hf = bool(include_template)
+    else:
+        incl_logo = bool(include_logo)
+        incl_hf = bool(include_header_footer)
+
+    if incl_logo and tpl is not None:
         pages.append(render.image_page(PIL.Image.open(tpl.logo_path())))
+    if incl_hf and tpl is not None:
         pages.append(render.text(tpl.header()))
 
     for block in blocks:
@@ -91,7 +112,63 @@ def render_blocks(blocks: Iterable, *, include_template: bool = False, template=
                 threshold = int(meta.get("threshold", 212)) if meta else 212
                 pages.append(render.pdf_page(resized_img, contrast=contrast, threshold=threshold))
 
-    if include_template and tpl is not None:
+        elif btype == "id_card":
+            # data is a dict with keys: name, photo, description, template (optional)
+            if not isinstance(data, dict):
+                continue
+            person_name = data.get("name", "")
+            description = data.get("description", "")
+            photo = data.get("photo")
+            tpl_key = data.get("template")
+
+            tpl = None
+            if tpl_key:
+                try:
+                    tpl = get_template(tpl_key)
+                except Exception:
+                    tpl = None
+
+            # Prepare photo image
+            photo_img = None
+            if isinstance(photo, PIL.Image.Image):
+                photo_img = photo
+            elif isinstance(photo, str):
+                # Try base64 first
+                try:
+                    photo_img = PIL.Image.open(io.BytesIO(base64.b64decode(photo)))
+                except Exception:
+                    photo_img = None
+                # Try file path or package resource
+                if photo_img is None:
+                    try:
+                        # direct filesystem path
+                        photo_img = PIL.Image.open(photo)
+                    except Exception:
+                        try:
+                            # package asset path
+                            asset_path = importlib.resources.files("catprint").joinpath("assets", photo)
+                            if asset_path.exists():
+                                photo_img = PIL.Image.open(asset_path)
+                        except Exception:
+                            photo_img = None
+            elif hasattr(photo, "read"):
+                try:
+                    photo_img = PIL.Image.open(io.BytesIO(photo.read()))
+                except Exception:
+                    photo_img = None
+
+            logo_img = None
+            company_name = ""
+            if tpl is not None:
+                try:
+                    logo_img = PIL.Image.open(tpl.logo_path())
+                    company_name = tpl.name
+                except Exception:
+                    logo_img = None
+
+            pages.append(render.id_card(company=company_name, name=person_name, photo=photo_img, logo=logo_img, description=description))
+
+    if incl_hf and tpl is not None:
         pages.append(render.text(tpl.footer()))
 
     return pages

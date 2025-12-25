@@ -38,23 +38,26 @@ h1 {
 }
 
 #preview-container {
-    min-height: 100px;
+    min-height: 180px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
     box-sizing: border-box;
-    background-color: #fff;
-    border: 2px dashed #000;
+    background-color: transparent;
+    padding: 12px;
+    width: 100%;
 }
 
 #preview-container.has-image {
-    border-color: transparent;
+    border: 8px solid #000;
+    background-color: #fff;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    padding: 18px;
 }
 
 #preview-container.drag-over {
-    border-style: dashed;
-    border-color: #000;
+    outline: 3px dashed #000;
 }
 
 #preview-text {
@@ -66,8 +69,13 @@ h1 {
 
 #preview {
     max-width: 100%;
+    max-height: 60vh;
     display: none;
     pointer-events: none;
+    border: 6px solid #000;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin: 0 auto;
 }
 
 #preview-container.has-image #preview {

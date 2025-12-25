@@ -2,8 +2,22 @@
 name = "IKEA Česká republika, s.r.o."
 address = "Prodejna ASGARD,   Roseč 1,   378 46 Roseč"
 logo = "ikea.png"
+receipt = true
+id_card = false
+positions = ["Sales", "Stock", "Manager"]
 
 [templates.free_coffee]
 name = "Free Coffee"
 address = "Coffee Bar, 42 Brew Lane"
 logo = "free_coffee.png"
+receipt = true
+id_card = true
+positions = ["Barista", "Manager", "Cashier"]
+
+[templates.decima]
+name = "Decima CatchCore"
+address = "Technologies Inc."
+logo = "decima.png"
+receipt = false
+id_card = true
+positions = ["Security", "Secretary", "IT", "Copywriter", "Researcher"]

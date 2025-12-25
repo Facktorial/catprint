@@ -19,6 +19,11 @@ class Template:
     name: str
     address: str
     logo: str
+    # feature flags for template capabilities
+    supports_receipt: bool = True
+    supports_id_card: bool = True
+    # optional list of allowed positions for this template/company
+    positions: list[str] | None = None
 
     def header(self) -> str:
         return f"""\
@@ -93,9 +98,45 @@ def _load_templates() -> Dict[str, Template]:
                     data["templates"][cur][k] = v
 
     templates: Dict[str, Template] = {}
+    def _parse_bool(val, default=True):
+        if isinstance(val, bool):
+            return val
+        if val is None:
+            return bool(default)
+        if isinstance(val, str):
+            return val.strip().lower() in ("1", "true", "yes", "y", "on")
+        try:
+            return bool(val)
+        except Exception:
+            return bool(default)
+
+    def _parse_positions(val):
+        if val is None:
+            return None
+        if isinstance(val, list):
+            return [str(x) for x in val]
+        if isinstance(val, str):
+            # parse as JSON array or comma-separated
+            val = val.strip()
+            if val.startswith('[') and val.endswith(']'):
+                try:
+                    import json as _json
+                    return _json.loads(val)
+                except Exception:
+                    pass
+            # comma-separated fallback
+            return [p.strip() for p in val.split(",") if p.strip()]
+        return None
+
     for key, cfg in (data.get("templates") or {}).items():
         templates[key] = Template(
-            key=key, name=cfg.get("name", ""), address=cfg.get("address", ""), logo=cfg.get("logo", ""),
+            key=key,
+            name=cfg.get("name", ""),
+            address=cfg.get("address", ""),
+            logo=cfg.get("logo", ""),
+            supports_receipt=_parse_bool(cfg.get("receipt"), True),
+            supports_id_card=_parse_bool(cfg.get("id_card"), True),
+            positions=_parse_positions(cfg.get("positions")),
         )
     return templates
 
